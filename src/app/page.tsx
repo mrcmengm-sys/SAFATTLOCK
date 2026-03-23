@@ -260,10 +260,9 @@ export default function TTLockTestPage() {
     }
 
     try {
-      // هام جداً للجوال: يجب طلب الجهاز مباشرة بعد النقر للحفاظ على "بادرة المستخدم" (User Gesture)
       console.log("Requesting Bluetooth device...");
       const device = await bluetooth.requestDevice({
-        filters: [{ services: ['00001910-0000-1000-8000-00805f9b34fb'] }],
+        filters: [{ namePrefix: 'S503_' }, { services: ['00001910-0000-1000-8000-00805f9b34fb'] }],
         optionalServices: ['00001910-0000-1000-8000-00805f9b34fb']
       });
 
@@ -280,8 +279,9 @@ export default function TTLockTestPage() {
         throw new Error(lockDetail.errormsg || "فشل في جلب مفاتيح التشفير من السحابة.");
       }
 
-      const { aesKeyStr } = lockDetail;
+      const { aesKeyStr, lockKey } = lockDetail;
       console.log("AES Key retrieved:", aesKeyStr);
+      console.log("Lock Key retrieved:", lockKey);
 
       console.log("Connecting to GATT Server...");
       const server = await device.gatt?.connect();
@@ -294,11 +294,12 @@ export default function TTLockTestPage() {
       await charNotify?.startNotifications();
       charNotify?.addEventListener('characteristicvaluechanged', (event: any) => {
         const value = event.target.value;
-        console.log("Received notification from lock:", value);
+        console.log("Received notification from lock (Hex):", Array.from(new Uint8Array(value.buffer)).map(b => b.toString(16).padStart(2, '0')).join(' '));
       });
 
       // دالة لتشفير وإرسال البيانات
       const sendEncryptedCommand = async (commandHex: string) => {
+        console.log("Sending Encrypted Command (Hex):", commandHex);
         const key = CryptoJS.enc.Hex.parse(aesKeyStr);
         const data = CryptoJS.enc.Hex.parse(commandHex);
         const encrypted = CryptoJS.AES.encrypt(data, key, {
@@ -306,7 +307,6 @@ export default function TTLockTestPage() {
           padding: CryptoJS.pad.NoPadding
         });
         
-        // تحويل CryptoJS ciphertext إلى Uint8Array بدون استخدام Buffer
         const ciphertextHex = encrypted.ciphertext.toString();
         const bytes = new Uint8Array(ciphertextHex.length / 2);
         for (let i = 0; i < bytes.length; i++) {
@@ -315,15 +315,35 @@ export default function TTLockTestPage() {
         await charWrite?.writeValue(bytes);
       };
 
-      // مثال لأمر الفتح (Unlock Payload - يختلف حسب إصدار البروتوكول)
-      // ملاحظة: هذا مجرد هيكل توضيحي، الأوامر الفعلية تتطلب بناء باكت محدد (Header + Command + Checksum)
-      alert("تم الاتصال بنجاح واستخراج مفتاح التشفير. جاري محاولة إرسال أمر الفتح المشفر...");
+      // بناء "باكت" الفتح (Unlock Packet) لبروتوكول V3
+      const buildUnlockPacket = () => {
+        const header = "7f01"; // V3 Header
+        const cmd = "01";      // Unlock Command
+        const lockKeyHex = lockKey; // 8 bytes (16 chars)
+        const timestamp = Math.floor(Date.now() / 1000);
+        const tsHex = timestamp.toString(16).padStart(8, '0'); // 4 bytes (8 chars)
+        
+        const dataHex = lockKeyHex + tsHex;
+        const lenHex = (dataHex.length / 2).toString(16).padStart(2, '0');
+        
+        const packetNoChecksum = header + cmd + lenHex + dataHex;
+        
+        // حساب الـ Checksum (مجموع البايتات)
+        let sum = 0;
+        for (let i = 0; i < packetNoChecksum.length; i += 2) {
+          sum += parseInt(packetNoChecksum.substring(i, i + 2), 16);
+        }
+        const checksumHex = (sum % 256).toString(16).padStart(2, '0');
+        
+        return packetNoChecksum + checksumHex;
+      };
+
+      alert(`تم الاتصال بالقفل ${device.name}\nجاري إرسال إشارة الفتح المشفرة لبروتوكول V3...`);
       
-      // بروتوكول TTLock V3 يتطلب بناء Packet معقد
-      // سنقوم هنا بمحاكاة إرسال أول باكت للمصادقة
-      console.log("Attempting to send encrypted authentication packet...");
+      const unlockPacket = buildUnlockPacket();
+      await sendEncryptedCommand(unlockPacket);
       
-      alert("تنبيه: تم إعداد بيئة التشفير AES-128. لفتح القفل فعلياً، يجب بناء الـ Packet البرمجي الخاص بـ TTLock (Protocol V3) بدقة.");
+      alert("تم إرسال إشارة الفتح! يرجى التحقق من القفل.");
 
     } catch (err: any) {
       console.error("Bluetooth Error:", err);
@@ -440,7 +460,24 @@ export default function TTLockTestPage() {
             {isModalOpen && selectedLock && (
               <div style={styles.modalBackdrop}>
                 <div style={styles.modalContent}>
-                  <h3 style={styles.modalTitle}>إدارة رموز المرور لـ "{selectedLock.lockAlias || selectedLock.lockName}"</h3>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #f1f5f9', paddingBottom: '1.2rem', marginBottom: '0.5rem' }}>
+                    <h3 style={{ ...styles.modalTitle, borderBottom: 'none', paddingBottom: 0, margin: 0 }}>
+                      إدارة رموز المرور لـ "{selectedLock.lockAlias || selectedLock.lockName}"
+                    </h3>
+                    {selectedLock.lockName && selectedLock.lockName.startsWith('S503') && (
+                      <span style={{ 
+                        backgroundColor: '#eff6ff', 
+                        color: '#1e40af', 
+                        padding: '0.4rem 0.8rem', 
+                        borderRadius: '8px', 
+                        fontSize: '0.9rem', 
+                        fontWeight: 'bold',
+                        border: '1px solid #bfdbfe'
+                      }}>
+                        موديل: {selectedLock.lockName}
+                      </span>
+                    )}
+                  </div>
                   
                   {selectedLock.noKeyPwd && (
                      <div style={styles.adminCodeBox}>
