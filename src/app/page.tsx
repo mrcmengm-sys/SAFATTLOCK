@@ -253,7 +253,8 @@ export default function TTLockTestPage() {
     setError(null);
     
     // التحقق من دعم المتصفح للبلوتوث
-    if (!navigator.bluetooth) {
+    const bluetooth = (navigator as any).bluetooth;
+    if (!bluetooth) {
       alert("متصفحك لا يدعم تقنية Web Bluetooth. يرجى استخدام Chrome أو Edge على Android، أو متصفح WebBLE على iOS.");
       return;
     }
@@ -261,7 +262,7 @@ export default function TTLockTestPage() {
     try {
       // هام جداً للجوال: يجب طلب الجهاز مباشرة بعد النقر للحفاظ على "بادرة المستخدم" (User Gesture)
       console.log("Requesting Bluetooth device...");
-      const device = await navigator.bluetooth.requestDevice({
+      const device = await bluetooth.requestDevice({
         filters: [{ services: ['00001910-0000-1000-8000-00805f9b34fb'] }],
         optionalServices: ['00001910-0000-1000-8000-00805f9b34fb']
       });
@@ -304,8 +305,14 @@ export default function TTLockTestPage() {
           mode: CryptoJS.mode.ECB,
           padding: CryptoJS.pad.NoPadding
         });
-        const encryptedBytes = new Uint8Array(Buffer.from(encrypted.ciphertext.toString(), 'hex'));
-        await charWrite?.writeValue(encryptedBytes);
+        
+        // تحويل CryptoJS ciphertext إلى Uint8Array بدون استخدام Buffer
+        const ciphertextHex = encrypted.ciphertext.toString();
+        const bytes = new Uint8Array(ciphertextHex.length / 2);
+        for (let i = 0; i < bytes.length; i++) {
+          bytes[i] = parseInt(ciphertextHex.substring(i * 2, i * 2 + 2), 16);
+        }
+        await charWrite?.writeValue(bytes);
       };
 
       // مثال لأمر الفتح (Unlock Payload - يختلف حسب إصدار البروتوكول)
