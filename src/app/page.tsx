@@ -13,6 +13,13 @@ export default function TTLockTestPage() {
   const [passcodes, setPasscodes] = useState<any[]>([]);
   const [selectedLock, setSelectedLock] = useState<any | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [modelFilter, setModelFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("name_asc");
+  const [activeTab, setActiveTab] = useState("locks"); // 'locks' or 'records'
+
+  // استخراج قائمة الموديلات الفريدة من الأقفال
+  const availableModels = ["all", ...new Set(locks.map(l => (l.lockAlias || l.lockName || "").split('_')[0]).filter(m => m))];
 
   // حالة موحدة للأخطاء والتحميل
   const [loading, setLoading] = useState<string | null>(null); // e.g., 'login', 'locks', 'records_123'
@@ -121,7 +128,7 @@ export default function TTLockTestPage() {
   const getLocks = async () => {
     setLoading('locks');
     setError(null);
-    setRecords([]); // إخفاء السجلات عند تحديث الأقفال
+    // لا نحتاج لإخفاء السجلات هنا، سنقوم بتحديث القائمة فقط
     try {
       const response = await fetch("/api/ttlock", {
         method: "POST",
@@ -154,6 +161,7 @@ export default function TTLockTestPage() {
       const data = await response.json();
       if (response.ok && data.list) {
         setRecords(data.list);
+        setActiveTab('records'); // الانتقال لتبويب السجلات تلقائياً
       } else {
         const detailedError = data.errormsg || `خطأ من الخادم: ${JSON.stringify(data)}`;
         setError(detailedError);
@@ -372,89 +380,199 @@ export default function TTLockTestPage() {
     return types[type] || `عملية أخرى (${type})`;
   };
 
+  const filteredLocks = locks
+    .filter(lock => {
+      const name = (lock.lockAlias || lock.lockName || "").toLowerCase();
+      const matchesSearch = name.includes(searchTerm.toLowerCase());
+      const modelPrefix = name.split('_')[0];
+      const matchesModel = modelFilter === "all" || modelPrefix.toLowerCase() === modelFilter.toLowerCase();
+      return matchesSearch && matchesModel;
+    })
+    .sort((a, b) => {
+      const nameA = (a.lockAlias || a.lockName || "").toLowerCase();
+      const nameB = (b.lockAlias || b.lockName || "").toLowerCase();
+
+      if (sortBy === "name_asc") return nameA.localeCompare(nameB);
+      if (sortBy === "name_desc") return nameB.localeCompare(nameA);
+      
+      // ترتيب حسب الرقم (الدور/الغرفة) - استخراج أول رقم يظهر في الاسم
+      if (sortBy === "floor") {
+        const numA = parseInt(nameA.match(/\d+/)?.[0] || "0");
+        const numB = parseInt(nameB.match(/\d+/)?.[0] || "0");
+        return numA - numB;
+      }
+      
+      return 0;
+    });
+
   return (
     <div style={styles.container}>
       <div style={styles.main}>
-        <h1 style={styles.title}>TTLock API</h1>
-        {accessToken && (
-          <div style={{ width: '100%', textAlign: 'left' }}>
+        <div style={styles.header}>
+          <h1 style={styles.title}>نظام إدارة الأقفال الذكية</h1>
+          {accessToken && (
             <button onClick={logout} style={styles.logoutButton}>
               تسجيل الخروج
             </button>
-          </div>
-        )}
+          )}
+        </div>
 
         {!accessToken ? (
-          <div style={styles.formContainer}>
-            <p style={styles.subtitle}>أدخل بيانات حسابك للدخول</p>
-            <input
-              type="text"
-              placeholder="البريد الإلكتروني"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              style={styles.input}
-            />
-            <input
-              type="password"
-              placeholder="كلمة المرور"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              style={styles.input}
-              disabled={loading === 'login'}
-            />
-            <button onClick={getAccessToken} style={styles.primaryButton} disabled={loading === 'login'}>
-              {loading === 'login' ? "جاري الدخول..." : "دخول"}
-            </button>
+          <div style={styles.loginCard}>
+            <div style={styles.loginHeader}>
+              <h2 style={{ margin: 0, color: '#1e293b' }}>تسجيل الدخول</h2>
+              <p style={{ color: '#64748b', marginTop: '0.5rem' }}>أدخل بيانات حساب TTLock الخاص بك</p>
+            </div>
+            <div style={styles.formContainer}>
+              <input
+                type="text"
+                placeholder="البريد الإلكتروني"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                style={styles.input}
+              />
+              <input
+                type="password"
+                placeholder="كلمة المرور"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={styles.input}
+                disabled={loading === 'login'}
+              />
+              <button onClick={getAccessToken} style={styles.primaryButton} disabled={loading === 'login'}>
+                {loading === 'login' ? "جاري الدخول..." : "دخول"}
+              </button>
+            </div>
           </div>
         ) : (
-          <div style={{ width: '100%' }}>
-            <button onClick={getLocks} disabled={loading === 'locks'} style={styles.primaryButton}>
-              {loading === 'locks' ? "جاري تحديث الأقفال..." : "تحديث قائمة الأقفال"}
-            </button>
+          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            {/* نظام التبويبات (Tabs) */}
+            <div style={styles.tabsContainer}>
+              <button 
+                onClick={() => setActiveTab('locks')} 
+                style={activeTab === 'locks' ? styles.activeTab : styles.inactiveTab}
+              >
+                <span style={{ fontSize: '1.2rem' }}>🔒</span>
+                قائمة الأقفال
+              </button>
+              <button 
+                onClick={() => setActiveTab('records')} 
+                style={activeTab === 'records' ? styles.activeTab : styles.inactiveTab}
+              >
+                <span style={{ fontSize: '1.2rem' }}>📋</span>
+                سجل العمليات {records.length > 0 && `(${records.length})`}
+              </button>
+            </div>
+
+            {activeTab === 'locks' && (
+              <>
+                {/* أزرار التحكم العلوية */}
+                <div style={styles.topActions}>
+                  <button onClick={getLocks} disabled={loading === 'locks'} style={styles.actionButton}>
+                    <span style={{ fontSize: '1.2rem' }}>🔄</span>
+                    {loading === 'locks' ? "جاري التحديث..." : "تحديث الأقفال"}
+                  </button>
+                </div>
+
+            {/* قسم الفلاتر والترتيب */}
+            <div style={styles.filterSection}>
+              <div style={{ flex: 2, position: 'relative', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <label style={styles.filterLabel}>البحث عن قفل:</label>
+                <div style={{ position: 'relative' }}>
+                  <input 
+                    type="text" 
+                    placeholder="اكتب اسم القفل هنا..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    style={styles.filterInput}
+                  />
+                  <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: '#475569', fontWeight: 'bold' }}>🔍</span>
+                </div>
+              </div>
+
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <label style={styles.filterLabel}>الموديل:</label>
+                <select 
+                  value={modelFilter}
+                  onChange={(e) => setModelFilter(e.target.value)}
+                  style={styles.filterSelect}
+                >
+                  {availableModels.map(model => (
+                    <option key={model} value={model}>
+                      {model === "all" ? "جميع الموديلات" : `موديل ${model}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <label style={styles.filterLabel}>ترتيب حسب:</label>
+                <select 
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  style={styles.filterSelect}
+                >
+                  <option value="name_asc">الاسم (أ-ي)</option>
+                  <option value="name_desc">الاسم (ي-أ)</option>
+                  <option value="floor">رقم الغرفة/الدور</option>
+                </select>
+              </div>
+            </div>
 
             {locks.length > 0 && (
               <div style={styles.locksContainer}>
-                {locks.map((lock, index) => (
-                  <div key={lock.lockId || `lock-${index}`} style={styles.lockCard}>
-                    <div style={styles.lockCardHeader}>
-                      <span style={styles.lockName}>{lock.lockAlias || lock.lockName}</span>
-                      <span style={getBatteryStyle(lock.electricQuantity)}>
-                        {lock.electricQuantity}% <i className="fas fa-battery-full"></i>
-                      </span>
+                {filteredLocks.length > 0 ? (
+                  filteredLocks.map((lock, index) => (
+                    <div key={lock.lockId || `lock-${index}`} style={styles.lockCard}>
+                      <div style={styles.lockCardHeader}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                          <span style={styles.lockName}>{lock.lockAlias || lock.lockName}</span>
+                          <span style={styles.lockIdBadge}>ID: {lock.lockId}</span>
+                        </div>
+                        <span style={getBatteryStyle(lock.electricQuantity)}>
+                          {lock.electricQuantity}% 🔋
+                        </span>
+                      </div>
+                      
+                      <div style={styles.cardActions}>
+                          <button
+                            onClick={() => unlockLock(lock.lockId)}
+                            disabled={loading === `unlock_${lock.lockId}`}
+                            style={{ ...styles.secondaryButton, backgroundColor: '#ecfdf5', color: '#059669', borderColor: '#d1fae5' }}
+                          >
+                            {loading === `unlock_${lock.lockId}` ? "جاري..." : "فتح أونلاين"}
+                          </button>
+                          <button
+                            onClick={() => unlockViaBluetooth(lock)}
+                            style={{ ...styles.secondaryButton, backgroundColor: '#eff6ff', color: '#2563eb', borderColor: '#dbeafe' }}
+                          >
+                            فتح بلوتوث
+                          </button>
+                          <button
+                            onClick={() => getRecords(lock.lockId)}
+                            disabled={loading === `records_${lock.lockId}`}
+                            style={styles.secondaryButton}
+                          >
+                            {loading === `records_${lock.lockId}` ? "..." : "السجلات"}
+                          </button>
+                          <button
+                            onClick={() => listPasscodes(lock)}
+                            disabled={loading === `passcodes_${lock.lockId}`}
+                            style={styles.secondaryButton}
+                          >
+                            الرموز
+                          </button>
+                      </div>
                     </div>
-                    <p style={styles.lockId}>ID: {lock.lockId}</p>
-                    <div style={styles.cardActions}>
-                        <button
-                         onClick={() => unlockLock(lock.lockId)}
-                         disabled={loading === `unlock_${lock.lockId}`}
-                         style={{ ...styles.secondaryButton, backgroundColor: '#dcfce7', color: '#166534', borderColor: '#bbf7d0' }}
-                       >
-                         {loading === `unlock_${lock.lockId}` ? "جاري الفتح..." : "فتح القفل (أونلاين)"}
-                       </button>
-                       <button
-                         onClick={() => unlockViaBluetooth(lock)}
-                         style={{ ...styles.secondaryButton, backgroundColor: '#e0f2fe', color: '#0369a1', borderColor: '#bae6fd' }}
-                       >
-                         فتح بلوتوث (قريب)
-                       </button>
-                       <button
-                         onClick={() => getRecords(lock.lockId)}
-                        disabled={loading === `records_${lock.lockId}`}
-                        style={styles.secondaryButton}
-                      >
-                        {loading === `records_${lock.lockId}` ? "جاري التحميل..." : "عرض السجلات"}
-                      </button>
-                      <button
-                        onClick={() => listPasscodes(lock)}
-                        disabled={loading === `passcodes_${lock.lockId}`}
-                        style={styles.secondaryButton}
-                      >
-                        إدارة رموز المرور
-                      </button>
-                    </div>
+                  ))
+                ) : (
+                  <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '3rem', color: '#64748b', backgroundColor: '#fff', borderRadius: '16px' }}>
+                    لا توجد أقفال تطابق بحثك.
                   </div>
-                ))}
+                )}
               </div>
+            )}
+              </>
             )}
 
             {isModalOpen && selectedLock && (
@@ -541,27 +659,47 @@ export default function TTLockTestPage() {
               </div>
             )}
 
-            {records.length > 0 && (
-              <div style={styles.recordsContainer}>
-                <h3 style={styles.recordsTitle}>آخر 20 سجل دخول</h3>
-                <table style={styles.recordsTable}>
-                  <thead>
-                    <tr>
-                      <th style={styles.tableHeader}>المستخدم</th>
-                      <th style={styles.tableHeader}>نوع العملية</th>
-                      <th style={styles.tableHeader}>الوقت والتاريخ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {records.map((record, index) => (
-                      <tr key={record.recordId || `record-${index}-${record.lockDate}`}>
-                        <td style={styles.tableCell}>{record.username || "غير معروف"}</td>
-                        <td style={styles.tableCell}>{formatRecordType(record.recordType)}</td>
-                        <td style={styles.tableCell}>{new Date(record.lockDate).toLocaleString('ar-EG')}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {activeTab === 'records' && (
+              <div id="records-section" style={styles.recordsContainer}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                  <h3 style={{ ...styles.recordsTitle, margin: 0 }}>آخر العمليات المسجلة</h3>
+                  {records.length > 0 && (
+                    <button 
+                      onClick={() => setRecords([])} 
+                      style={{ padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontWeight: 'bold' }}
+                    >
+                      مسح السجل
+                    </button>
+                  )}
+                </div>
+                
+                {records.length > 0 ? (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={styles.recordsTable}>
+                      <thead>
+                        <tr>
+                          <th style={styles.tableHeader}>المستخدم</th>
+                          <th style={styles.tableHeader}>نوع العملية</th>
+                          <th style={styles.tableHeader}>الوقت والتاريخ</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {records.map((record, index) => (
+                          <tr key={record.recordId || `record-${index}-${record.lockDate}`}>
+                            <td style={styles.tableCell}>{record.username || "غير معروف"}</td>
+                            <td style={styles.tableCell}>{formatRecordType(record.recordType)}</td>
+                            <td style={styles.tableCell}>{new Date(record.lockDate).toLocaleString('ar-EG')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '4rem', color: '#64748b', backgroundColor: '#f8fafc', borderRadius: '12px', border: '2px dashed #e2e8f0' }}>
+                    <span style={{ fontSize: '3rem', display: 'block', marginBottom: '1rem' }}>📭</span>
+                    لا توجد سجلات لعرضها حالياً. انقر على زر "السجلات" الخاص بأي قفل لعرض نشاطه هنا.
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -581,10 +719,51 @@ export default function TTLockTestPage() {
 const styles: { [key: string]: React.CSSProperties } = {
   container: {
     direction: 'rtl',
-    fontFamily: 'system-ui, -apple-system, sans-serif',
     backgroundColor: '#f8fafc',
     minHeight: '100vh',
     padding: '1rem', // Reduced padding for mobile
+  },
+  tabsContainer: {
+    display: 'flex',
+    gap: '0.5rem',
+    width: '100%',
+    backgroundColor: '#fff',
+    padding: '0.5rem',
+    borderRadius: '14px',
+    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+    border: '1px solid #e2e8f0',
+  },
+  activeTab: {
+    flex: 1,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.6rem',
+    padding: '0.8rem',
+    borderRadius: '10px',
+    border: 'none',
+    backgroundColor: '#2563eb',
+    color: '#fff',
+    fontSize: '0.95rem',
+    fontWeight: '700',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  inactiveTab: {
+    flex: 1,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.6rem',
+    padding: '0.8rem',
+    borderRadius: '10px',
+    border: 'none',
+    backgroundColor: 'transparent',
+    color: '#64748b',
+    fontSize: '0.95rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
   },
   main: {
     width: '100%',
@@ -596,11 +775,102 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '1.5rem',
   },
   title: {
-    fontSize: '2rem', // Smaller title for mobile
-    color: '#1a1a1a',
-    fontWeight: 'bold',
-    marginBottom: '0.2rem',
+    fontSize: '1.5rem',
+    color: '#0f172a',
+    fontWeight: '800',
+    margin: 0,
+  },
+  header: {
+    width: '100%',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '1rem 0',
+    borderBottom: '1px solid #e2e8f0',
+    marginBottom: '1rem',
+  },
+  loginCard: {
+    width: '100%',
+    maxWidth: '450px',
+    backgroundColor: '#fff',
+    borderRadius: '24px',
+    padding: '2.5rem',
+    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+    marginTop: '2rem',
+  },
+  loginHeader: {
     textAlign: 'center',
+    marginBottom: '2rem',
+  },
+  topActions: {
+    display: 'flex',
+    gap: '1rem',
+    width: '100%',
+  },
+  actionButton: {
+    flex: 1,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.5rem',
+    padding: '0.8rem 1rem',
+    borderRadius: '12px',
+    border: 'none',
+    backgroundColor: '#2563eb',
+    color: '#fff',
+    fontSize: '0.95rem',
+    fontWeight: '700',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+  },
+  filterSection: {
+    display: 'flex',
+    flexDirection: 'row',
+    flexWrap: 'wrap', // Allow wrapping on mobile
+    gap: '1.2rem',
+    width: '100%',
+    backgroundColor: '#fff',
+    padding: '1.5rem',
+    borderRadius: '16px',
+    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+    border: '1px solid #e2e8f0',
+  },
+  filterLabel: {
+    fontSize: '0.9rem',
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: '0.2rem',
+  },
+  filterInput: {
+    width: '100%',
+    padding: '0.8rem 1rem 0.8rem 2.5rem',
+    borderRadius: '10px',
+    border: '2px solid #e2e8f0', // Thicker border for clarity
+    fontSize: '0.95rem',
+    outline: 'none',
+    backgroundColor: '#f8fafc',
+    color: '#0f172a',
+    fontWeight: '500',
+  },
+  filterSelect: {
+    width: '100%',
+    padding: '0.8rem 1rem',
+    borderRadius: '10px',
+    border: '2px solid #e2e8f0',
+    fontSize: '0.95rem',
+    backgroundColor: '#f8fafc',
+    cursor: 'pointer',
+    color: '#0f172a',
+    fontWeight: '500',
+  },
+  lockIdBadge: {
+    fontSize: '0.75rem',
+    color: '#64748b',
+    backgroundColor: '#f1f5f9',
+    padding: '0.1rem 0.4rem',
+    borderRadius: '4px',
+    width: 'fit-content',
   },
   subtitle: {
     fontSize: '1.1rem',
