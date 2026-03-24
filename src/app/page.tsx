@@ -297,7 +297,7 @@ export default function TTLockTestPage() {
       alert("6. تم الاتصال بالخدمة الرئيسية. جارٍ الحصول على الخصائص...");
 
       // --- آلية إعادة المحاولة الذكية ---
-      let charWrite, charNotify;
+      let charWrite: BluetoothRemoteGATTCharacteristic | undefined, charNotify: BluetoothRemoteGATTCharacteristic | undefined;
       let attempts = 0;
       const maxAttempts = 5;
 
