@@ -294,7 +294,10 @@ export default function TTLockTestPage() {
       alert("5. جارٍ الاتصال بالقفل (GATT Connect)...");
       const server = await device.gatt?.connect();
       const service = await server?.getPrimaryService('00001910-0000-1000-8000-00805f9b34fb');
-      alert("6. تم الاتصال بالخدمة الرئيسية للقفل.");
+      alert("6. تم الاتصال بالخدمة الرئيسية للقفل. جارٍ الانتظار للحظة...");
+
+      // إضافة تأخير بسيط لإعطاء القفل وقتاً لتهيئة خصائصه
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       const charWrite = await service?.getCharacteristic('00001911-0000-1000-8000-00805f9b34fb');
       const charNotify = await service?.getCharacteristic('00001912-0000-1000-8000-00805f9b34fb');
