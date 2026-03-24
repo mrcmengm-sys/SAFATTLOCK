@@ -268,14 +268,15 @@ export default function TTLockTestPage() {
     }
 
     try {
-      console.log("Requesting Bluetooth device...");
+      alert("1. جارٍ طلب جهاز بلوتوث...");
       const device = await bluetooth.requestDevice({
         filters: [{ namePrefix: 'S503_' }, { services: ['00001910-0000-1000-8000-00805f9b34fb'] }],
         optionalServices: ['00001910-0000-1000-8000-00805f9b34fb']
       });
+      alert(`2. تم اختيار الجهاز: ${device.name}`);
 
       // جلب مفاتيح التشفير أثناء/بعد اختيار الجهاز
-      console.log("Fetching lock detail for Bluetooth keys...");
+      alert("3. جارٍ جلب مفاتيح التشفير من الخادم...");
       const detailResponse = await fetch("/api/ttlock", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -284,30 +285,30 @@ export default function TTLockTestPage() {
       const lockDetail = await detailResponse.json();
 
       if (!detailResponse.ok) {
-        throw new Error(lockDetail.errormsg || "فشل في جلب مفاتيح التشفير من السحابة.");
+        throw new Error(`فشل جلب مفاتيح التشفير: ${lockDetail.errormsg || "خطأ غير معروف"}`);
       }
+      alert("4. تم استلام مفاتيح التشفير بنجاح.");
 
       const { aesKeyStr, lockKey } = lockDetail;
-      console.log("AES Key retrieved:", aesKeyStr);
-      console.log("Lock Key retrieved:", lockKey);
 
-      console.log("Connecting to GATT Server...");
+      alert("5. جارٍ الاتصال بالقفل (GATT Connect)...");
       const server = await device.gatt?.connect();
       const service = await server?.getPrimaryService('00001910-0000-1000-8000-00805f9b34fb');
+      alert("6. تم الاتصال بالخدمة الرئيسية للقفل.");
       
-      // خاصية الكتابة (Write) وخاصية الإشعارات (Notify) لـ TTLock
       const charWrite = await service?.getCharacteristic('00001911-0000-1000-8000-00805f9b34fb');
       const charNotify = await service?.getCharacteristic('00001912-0000-1000-8000-00805f9b34fb');
+      alert("7. تم الحصول على خصائص القراءة والكتابة.");
 
       await charNotify?.startNotifications();
       charNotify?.addEventListener('characteristicvaluechanged', (event: any) => {
         const value = event.target.value;
-        console.log("Received notification from lock (Hex):", Array.from(new Uint8Array(value.buffer)).map(b => b.toString(16).padStart(2, '0')).join(' '));
+        const hexString = Array.from(new Uint8Array(value.buffer)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+        console.log("Received notification (Hex):", hexString);
+        alert(`إشعار من القفل: ${hexString}`);
       });
 
-      // دالة لتشفير وإرسال البيانات
       const sendEncryptedCommand = async (commandHex: string) => {
-        console.log("Sending Encrypted Command (Hex):", commandHex);
         const key = CryptoJS.enc.Hex.parse(aesKeyStr);
         const data = CryptoJS.enc.Hex.parse(commandHex);
         const encrypted = CryptoJS.AES.encrypt(data, key, {
@@ -323,20 +324,18 @@ export default function TTLockTestPage() {
         await charWrite?.writeValue(bytes);
       };
 
-      // بناء "باكت" الفتح (Unlock Packet) لبروتوكول V3
       const buildUnlockPacket = () => {
-        const header = "7f01"; // V3 Header
-        const cmd = "01";      // Unlock Command
-        const lockKeyHex = lockKey; // 8 bytes (16 chars)
+        const header = "7f01";
+        const cmd = "01";
+        const lockKeyHex = lockKey;
         const timestamp = Math.floor(Date.now() / 1000);
-        const tsHex = timestamp.toString(16).padStart(8, '0'); // 4 bytes (8 chars)
+        const tsHex = timestamp.toString(16).padStart(8, '0');
         
         const dataHex = lockKeyHex + tsHex;
         const lenHex = (dataHex.length / 2).toString(16).padStart(2, '0');
         
         const packetNoChecksum = header + cmd + lenHex + dataHex;
         
-        // حساب الـ Checksum (مجموع البايتات)
         let sum = 0;
         for (let i = 0; i < packetNoChecksum.length; i += 2) {
           sum += parseInt(packetNoChecksum.substring(i, i + 2), 16);
@@ -346,20 +345,19 @@ export default function TTLockTestPage() {
         return packetNoChecksum + checksumHex;
       };
 
-      alert(`تم الاتصال بالقفل ${device.name}\nجاري إرسال إشارة الفتح المشفرة لبروتوكول V3...`);
-      
+      alert("8. جارٍ بناء حزمة الفتح المشفرة...");
       const unlockPacket = buildUnlockPacket();
+      
+      alert(`9. جارٍ إرسال الأمر المشفر: ${unlockPacket}`);
       await sendEncryptedCommand(unlockPacket);
       
-      alert("تم إرسال إشارة الفتح! يرجى التحقق من القفل.");
+      alert("10. تم إرسال إشارة الفتح بنجاح! يرجى التحقق من القفل.");
 
     } catch (err: any) {
       console.error("Bluetooth Error:", err);
-      if (err.name === 'NotFoundError') {
-        // المستخدم ألغى البحث أو لم يجد جهازاً
-      } else {
-        setError(`خطأ في البلوتوث: ${err.message}`);
-      }
+      const errorMessage = `خطأ في البلوتوث: ${err.message}`;
+      setError(errorMessage);
+      alert(errorMessage);
     }
   };
 
@@ -406,13 +404,13 @@ export default function TTLockTestPage() {
     });
 
   return (
-    <div style={styles.container}>
+    <div className="mobile-tight-padding" style={styles.container}>
       <div style={styles.main}>
         <div style={styles.header}>
-          <h1 style={styles.title}>نظام إدارة الأقفال الذكية</h1>
+          <h1 style={styles.title}>إدارة الأقفال الذكية</h1>
           {accessToken && (
             <button onClick={logout} style={styles.logoutButton}>
-              تسجيل الخروج
+              خروج
             </button>
           )}
         </div>
@@ -474,23 +472,22 @@ export default function TTLockTestPage() {
                   </button>
                 </div>
 
-            {/* قسم الفلاتر والترتيب */}
             <div style={styles.filterSection}>
-              <div style={{ flex: 2, position: 'relative', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <label style={styles.filterLabel}>البحث عن قفل:</label>
+              <div style={{ flex: '1 1 100%', position: 'relative', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <label style={styles.filterLabel}>البحث:</label>
                 <div style={{ position: 'relative' }}>
                   <input 
                     type="text" 
-                    placeholder="اكتب اسم القفل هنا..." 
+                    placeholder="اسم القفل..." 
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     style={styles.filterInput}
                   />
-                  <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: '#475569', fontWeight: 'bold' }}>🔍</span>
+                  <span style={{ position: 'absolute', left: '0.8rem', top: '50%', transform: 'translateY(-50%)', color: '#475569' }}>🔍</span>
                 </div>
               </div>
 
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div style={{ flex: '1 1 45%', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 <label style={styles.filterLabel}>الموديل:</label>
                 <select 
                   value={modelFilter}
@@ -499,14 +496,14 @@ export default function TTLockTestPage() {
                 >
                   {availableModels.map(model => (
                     <option key={model} value={model}>
-                      {model === "all" ? "جميع الموديلات" : `موديل ${model}`}
+                      {model === "all" ? "الكل" : model}
                     </option>
                   ))}
                 </select>
               </div>
 
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <label style={styles.filterLabel}>ترتيب حسب:</label>
+              <div style={{ flex: '1 1 45%', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <label style={styles.filterLabel}>ترتيب:</label>
                 <select 
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
@@ -514,13 +511,13 @@ export default function TTLockTestPage() {
                 >
                   <option value="name_asc">الاسم (أ-ي)</option>
                   <option value="name_desc">الاسم (ي-أ)</option>
-                  <option value="floor">رقم الغرفة/الدور</option>
+                  <option value="floor">رقم الغرفة</option>
                 </select>
               </div>
             </div>
 
             {locks.length > 0 && (
-              <div style={styles.locksContainer}>
+              <div className="mobile-grid-1" style={styles.locksContainer}>
                 {filteredLocks.length > 0 ? (
                   filteredLocks.map((lock, index) => (
                     <div key={lock.lockId || `lock-${index}`} style={styles.lockCard}>
@@ -721,16 +718,16 @@ const styles: { [key: string]: React.CSSProperties } = {
     direction: 'rtl',
     backgroundColor: '#f8fafc',
     minHeight: '100vh',
-    padding: '1rem', // Reduced padding for mobile
+    padding: '0.8rem',
   },
   tabsContainer: {
     display: 'flex',
-    gap: '0.5rem',
+    gap: '0.3rem',
     width: '100%',
     backgroundColor: '#fff',
-    padding: '0.5rem',
-    borderRadius: '14px',
-    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+    padding: '0.4rem',
+    borderRadius: '12px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
     border: '1px solid #e2e8f0',
   },
   activeTab: {
@@ -738,13 +735,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '0.6rem',
-    padding: '0.8rem',
-    borderRadius: '10px',
+    gap: '0.4rem',
+    padding: '0.7rem 0.4rem',
+    borderRadius: '8px',
     border: 'none',
     backgroundColor: '#2563eb',
     color: '#fff',
-    fontSize: '0.95rem',
+    fontSize: '0.9rem',
     fontWeight: '700',
     cursor: 'pointer',
     transition: 'all 0.2s',
@@ -754,13 +751,13 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '0.6rem',
-    padding: '0.8rem',
-    borderRadius: '10px',
+    gap: '0.4rem',
+    padding: '0.7rem 0.4rem',
+    borderRadius: '8px',
     border: 'none',
     backgroundColor: 'transparent',
     color: '#64748b',
-    fontSize: '0.95rem',
+    fontSize: '0.9rem',
     fontWeight: '600',
     cursor: 'pointer',
     transition: 'all 0.2s',
@@ -772,10 +769,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    gap: '1.5rem',
+    gap: '1rem',
   },
   title: {
-    fontSize: '1.5rem',
+    fontSize: '1.3rem',
     color: '#0f172a',
     fontWeight: '800',
     margin: 0,
@@ -785,26 +782,26 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '1rem 0',
+    padding: '0.8rem 0',
     borderBottom: '1px solid #e2e8f0',
-    marginBottom: '1rem',
+    marginBottom: '0.5rem',
   },
   loginCard: {
     width: '100%',
     maxWidth: '450px',
     backgroundColor: '#fff',
-    borderRadius: '24px',
-    padding: '2.5rem',
-    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-    marginTop: '2rem',
+    borderRadius: '20px',
+    padding: '2rem',
+    boxShadow: '0 15px 25px rgba(0,0,0,0.05)',
+    marginTop: '1.5rem',
   },
   loginHeader: {
     textAlign: 'center',
-    marginBottom: '2rem',
+    marginBottom: '1.5rem',
   },
   topActions: {
     display: 'flex',
-    gap: '1rem',
+    gap: '0.8rem',
     width: '100%',
   },
   actionButton: {
@@ -812,176 +809,151 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '0.5rem',
-    padding: '0.8rem 1rem',
-    borderRadius: '12px',
+    gap: '0.4rem',
+    padding: '0.7rem',
+    borderRadius: '10px',
     border: 'none',
     backgroundColor: '#2563eb',
     color: '#fff',
-    fontSize: '0.95rem',
+    fontSize: '0.9rem',
     fontWeight: '700',
     cursor: 'pointer',
     transition: 'all 0.2s',
-    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
   },
   filterSection: {
     display: 'flex',
     flexDirection: 'row',
-    flexWrap: 'wrap', // Allow wrapping on mobile
-    gap: '1.2rem',
+    flexWrap: 'wrap',
+    gap: '0.8rem',
     width: '100%',
     backgroundColor: '#fff',
-    padding: '1.5rem',
-    borderRadius: '16px',
-    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+    padding: '1rem',
+    borderRadius: '14px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
     border: '1px solid #e2e8f0',
   },
   filterLabel: {
-    fontSize: '0.9rem',
+    fontSize: '0.85rem',
     fontWeight: '700',
     color: '#334155',
-    marginBottom: '0.2rem',
+    marginBottom: '0.1rem',
   },
   filterInput: {
     width: '100%',
-    padding: '0.8rem 1rem 0.8rem 2.5rem',
-    borderRadius: '10px',
-    border: '2px solid #e2e8f0', // Thicker border for clarity
-    fontSize: '0.95rem',
+    padding: '0.7rem 0.8rem 0.7rem 2.2rem',
+    borderRadius: '8px',
+    border: '1.5px solid #e2e8f0',
+    fontSize: '0.9rem',
     outline: 'none',
     backgroundColor: '#f8fafc',
     color: '#0f172a',
-    fontWeight: '500',
   },
   filterSelect: {
     width: '100%',
-    padding: '0.8rem 1rem',
-    borderRadius: '10px',
-    border: '2px solid #e2e8f0',
-    fontSize: '0.95rem',
+    padding: '0.7rem 0.5rem',
+    borderRadius: '8px',
+    border: '1.5px solid #e2e8f0',
+    fontSize: '0.9rem',
     backgroundColor: '#f8fafc',
     cursor: 'pointer',
     color: '#0f172a',
-    fontWeight: '500',
   },
   lockIdBadge: {
-    fontSize: '0.75rem',
+    fontSize: '0.7rem',
     color: '#64748b',
     backgroundColor: '#f1f5f9',
-    padding: '0.1rem 0.4rem',
+    padding: '0.1rem 0.3rem',
     borderRadius: '4px',
     width: 'fit-content',
   },
   subtitle: {
-    fontSize: '1.1rem',
+    fontSize: '1rem',
     color: '#444',
-    marginBottom: '1.5rem',
+    marginBottom: '1rem',
   },
   formContainer: {
     width: '100%',
-    maxWidth: '400px',
-    padding: '2.5rem',
+    padding: '1.5rem',
     backgroundColor: '#fff',
-    borderRadius: '16px',
-    boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
+    borderRadius: '12px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '1.2rem',
-    border: '1px solid #eaeaea',
+    gap: '1rem',
   },
   input: {
-    padding: '1rem 1.2rem',
-    borderRadius: '10px',
-    border: '2px solid #eee',
-    fontSize: '1rem',
+    padding: '0.8rem',
+    borderRadius: '8px',
+    border: '1.5px solid #eee',
+    fontSize: '0.95rem',
     textAlign: 'right',
-    transition: 'border-color 0.2s',
     color: '#1a1a1a',
   },
   primaryButton: {
-    padding: '1rem 1.5rem',
-    borderRadius: '10px',
+    padding: '0.9rem',
+    borderRadius: '8px',
     border: 'none',
     backgroundColor: '#2563eb',
     color: '#fff',
-    fontSize: '1.1rem',
+    fontSize: '1rem',
     fontWeight: 'bold',
     cursor: 'pointer',
     width: '100%',
-    transition: 'all 0.2s',
-    boxShadow: '0 4px 6px rgba(37, 99, 235, 0.2)',
+    boxShadow: '0 2px 4px rgba(37, 99, 235, 0.2)',
   },
   logoutButton: {
     background: '#fee2e2',
     border: '1px solid #fecaca',
     color: '#dc2626',
-    padding: '0.5rem 1rem',
-    borderRadius: '8px',
+    padding: '0.4rem 0.8rem',
+    borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '0.9rem',
+    fontSize: '0.85rem',
     fontWeight: '600',
-    transition: 'all 0.2s',
   },
   locksContainer: {
     width: '100%',
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-    gap: '1.5rem',
-    marginTop: '2rem',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+    gap: '1rem',
+    marginTop: '0.5rem',
   },
   lockCard: {
     backgroundColor: '#fff',
-    borderRadius: '16px',
-    padding: '1.5rem',
-    boxShadow: '0 4px 15px rgba(0,0,0,0.05)',
+    borderRadius: '14px',
+    padding: '1rem',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
     border: '1px solid #f0f0f0',
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.8rem',
-    transition: 'all 0.2s',
-    cursor: 'default',
+    gap: '0.6rem',
   },
   lockCardHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '0.5rem',
+    marginBottom: '0.2rem',
   },
   lockName: {
-    fontSize: '1.2rem',
+    fontSize: '1.1rem',
     fontWeight: '800',
     color: '#111',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-  lockId: {
-    fontSize: '0.85rem',
-    color: '#666',
-    backgroundColor: '#f8fafc',
-    padding: '0.3rem 0.6rem',
-    borderRadius: '6px',
-    alignSelf: 'flex-start',
   },
   cardActions: {
-    display: 'flex',
-    flexDirection: 'row',
-    flexWrap: 'wrap', // Allow wrapping on mobile
-    gap: '0.6rem',
-    marginTop: '0.8rem',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '0.5rem',
+    marginTop: '0.4rem',
   },
   secondaryButton: {
-    flex: '1 1 calc(50% - 0.6rem)', // 2 buttons per row on small screens, or 1 if very small
-    minWidth: '120px',
-    padding: '0.8rem 0.5rem',
-    borderRadius: '10px',
-    border: '2px solid #e2e8f0',
+    padding: '0.6rem 0.3rem',
+    borderRadius: '8px',
+    border: '1.5px solid #e2e8f0',
     backgroundColor: '#fff',
     color: '#334155',
-    fontSize: '0.85rem',
+    fontSize: '0.8rem',
     fontWeight: '700',
     cursor: 'pointer',
-    transition: 'all 0.2s',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -989,16 +961,16 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   recordsContainer: {
     width: '100%',
-    marginTop: '3rem',
+    marginTop: '1rem',
     backgroundColor: '#fff',
-    borderRadius: '16px',
-    padding: '2rem',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.05)',
+    borderRadius: '14px',
+    padding: '1.2rem',
+    boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
     border: '1px solid #f0f0f0',
   },
   recordsTitle: {
-    fontSize: '1.75rem',
-    marginBottom: '2rem',
+    fontSize: '1.3rem',
+    marginBottom: '1rem',
     color: '#1a1a1a',
     fontWeight: '800',
     textAlign: 'center',
@@ -1009,32 +981,32 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderSpacing: '0 0.5rem',
   },
   tableHeader: {
-    padding: '1rem',
+    padding: '0.8rem',
     textAlign: 'right',
     color: '#475569',
     fontWeight: '700',
-    fontSize: '0.95rem',
+    fontSize: '0.85rem',
     borderBottom: '2px solid #f1f5f9',
   },
   tableCell: {
-    padding: '1rem',
+    padding: '0.8rem',
     textAlign: 'right',
     color: '#1e293b',
-    fontSize: '0.95rem',
+    fontSize: '0.85rem',
     backgroundColor: '#fff',
     borderBottom: '1px solid #f1f5f9',
   },
   errorBox: {
     width: '100%',
     maxWidth: '500px',
-    padding: '1.2rem',
-    borderRadius: '12px',
+    padding: '1rem',
+    borderRadius: '10px',
     backgroundColor: '#fef2f2',
     color: '#b91c1c',
     border: '1px solid #fee2e2',
     textAlign: 'center',
     fontWeight: '600',
-    marginTop: '1rem',
+    marginTop: '0.5rem',
   },
   modalBackdrop: {
     position: 'fixed',
@@ -1051,115 +1023,113 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   modalContent: {
     backgroundColor: '#fff',
-    padding: '1.5rem', // Reduced padding
+    padding: '1.2rem',
     borderRadius: '20px',
     width: '92%',
     maxWidth: '500px',
-    maxHeight: '90vh', // Prevent from going off screen
-    overflowY: 'auto', // Allow scrolling within modal
+    maxHeight: '90vh',
+    overflowY: 'auto',
     display: 'flex',
     flexDirection: 'column',
-    gap: '1.2rem',
+    gap: '1rem',
     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
   },
   modalTitle: {
-    fontSize: '1.5rem',
+    fontSize: '1.2rem',
     color: '#111',
     fontWeight: '800',
     borderBottom: '2px solid #f1f5f9',
-    paddingBottom: '1.2rem',
+    paddingBottom: '0.8rem',
   },
   adminCodeBox: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '1rem',
+    padding: '0.8rem',
     backgroundColor: '#fff7ed',
-    borderRadius: '12px',
+    borderRadius: '10px',
     border: '1px solid #ffedd5',
     color: '#9a3412',
   },
   adminLabel: {
-    fontSize: '1rem',
+    fontSize: '0.9rem',
     fontWeight: '700',
   },
   adminCode: {
-    fontSize: '1.25rem',
+    fontSize: '1.1rem',
     fontWeight: '800',
     letterSpacing: '1px',
   },
   copyButton: {
-    padding: '0.4rem 0.8rem',
+    padding: '0.3rem 0.6rem',
     borderRadius: '6px',
     border: '1px solid #ff964d',
     backgroundColor: '#fff',
     color: '#9a3412',
-    fontSize: '0.85rem',
+    fontSize: '0.8rem',
     fontWeight: '700',
     cursor: 'pointer',
-    transition: 'all 0.2s',
   },
   addPasscodeForm: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '1rem',
-    padding: '1.5rem',
+    gap: '0.8rem',
+    padding: '1.2rem',
     backgroundColor: '#f8fafc',
-    borderRadius: '12px',
+    borderRadius: '10px',
     border: '1px solid #e2e8f0',
   },
   passcodeListTitle: {
-    fontSize: '1.3rem',
+    fontSize: '1.1rem',
     color: '#1e293b',
     fontWeight: '700',
-    marginTop: '1rem',
+    marginTop: '0.5rem',
   },
   passcodeList: {
     listStyle: 'none',
     padding: 0,
-    maxHeight: '300px',
+    maxHeight: '250px',
     overflowY: 'auto',
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.8rem',
+    gap: '0.6rem',
   },
   passcodeItem: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '1rem',
+    padding: '0.8rem',
     backgroundColor: '#fff',
-    borderRadius: '10px',
+    borderRadius: '8px',
     border: '1px solid #f1f5f9',
     color: '#1e293b',
   },
   permanentBadge: {
-    padding: '0.2rem 0.5rem',
-    borderRadius: '6px',
+    padding: '0.2rem 0.4rem',
+    borderRadius: '5px',
     backgroundColor: '#ecfdf5',
     color: '#059669',
-    fontSize: '0.75rem',
+    fontSize: '0.7rem',
     fontWeight: '700',
   },
   temporaryBadge: {
-    padding: '0.2rem 0.5rem',
-    borderRadius: '6px',
+    padding: '0.2rem 0.4rem',
+    borderRadius: '5px',
     backgroundColor: '#eff6ff',
     color: '#2563eb',
-    fontSize: '0.75rem',
+    fontSize: '0.7rem',
     fontWeight: '700',
   },
   closeButton: {
-    padding: '1rem',
-    borderRadius: '10px',
+    padding: '0.8rem',
+    borderRadius: '8px',
     border: '2px solid #e2e8f0',
     backgroundColor: '#fff',
     color: '#64748b',
-    fontSize: '1rem',
+    fontSize: '0.9rem',
     fontWeight: '700',
     cursor: 'pointer',
-    marginTop: '1rem',
-    transition: 'all 0.2s',
+    marginTop: '0.5rem',
   },
 };
 
@@ -1180,15 +1150,15 @@ const getBatteryStyle = (level: number): React.CSSProperties => {
   }
   
   return {
-    padding: '0.3rem 0.6rem',
-    borderRadius: '8px',
+    padding: '0.2rem 0.4rem',
+    borderRadius: '6px',
     backgroundColor: bgColor,
     color: color,
     border: `1px solid ${borderColor}`,
-    fontSize: '0.8rem',
+    fontSize: '0.75rem',
     fontWeight: 'bold',
     display: 'flex',
     alignItems: 'center',
-    gap: '0.4rem',
+    gap: '0.3rem',
   };
 };

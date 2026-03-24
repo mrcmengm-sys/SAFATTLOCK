@@ -23,3 +23,28 @@ body {
   color: var(--foreground);
   font-family: var(--font-custom);
 }
+
+/* تحسين التجاوب للشاشات الصغيرة جداً */
+@media (max-width: 480px) {
+  :root {
+    font-size: 13px; /* تصغير حجم الخط الأساسي */
+  }
+  
+  .mobile-tight-padding {
+    padding: 0.5rem !important;
+  }
+  
+  .mobile-text-xs {
+    font-size: 0.75rem !important;
+  }
+  
+  .mobile-grid-1 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 350px) {
+  :root {
+    font-size: 11px; /* تصغير أكثر للشاشات المتناهية الصغر */
+  }
+}
