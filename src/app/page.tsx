@@ -294,13 +294,31 @@ export default function TTLockTestPage() {
       alert("5. جارٍ الاتصال بالقفل (GATT Connect)...");
       const server = await device.gatt?.connect();
       const service = await server?.getPrimaryService('00001910-0000-1000-8000-00805f9b34fb');
-      alert("6. تم الاتصال بالخدمة الرئيسية للقفل. جارٍ الانتظار للحظة...");
+      alert("6. تم الاتصال بالخدمة الرئيسية. جارٍ الحصول على الخصائص...");
 
-      // إضافة تأخير بسيط لإعطاء القفل وقتاً لتهيئة خصائصه
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      const charWrite = await service?.getCharacteristic('00001911-0000-1000-8000-00805f9b34fb');
-      const charNotify = await service?.getCharacteristic('00001912-0000-1000-8000-00805f9b34fb');
+      // --- آلية إعادة المحاولة الذكية ---
+      let charWrite, charNotify;
+      let attempts = 0;
+      const maxAttempts = 5;
+
+      while (attempts < maxAttempts) {
+        try {
+          charWrite = await service?.getCharacteristic('00001911-0000-1000-8000-00805f9b34fb');
+          charNotify = await service?.getCharacteristic('00001912-0000-1000-8000-00805f9b34fb');
+          if (charWrite && charNotify) {
+            break; // نجحنا، اخرج من الحلقة
+          }
+        } catch (e) {
+          if (attempts === maxAttempts - 1) {
+            throw e; // فشلت كل المحاولات، ارمِ الخطأ الأخير
+          }
+          alert(`محاولة ${attempts + 1} فشلت، سيتم إعادة المحاولة بعد 100ms`);
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        attempts++;
+      }
+      // --- نهاية آلية إعادة المحاولة ---
+
       alert("7. تم الحصول على خصائص القراءة والكتابة.");
 
       await charNotify?.startNotifications();
